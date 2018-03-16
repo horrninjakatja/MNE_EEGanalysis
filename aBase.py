@@ -1,43 +1,74 @@
 ##### Basic EEG Analysis with mne-python #####
 
 import mne 
+from epochdef import epochdef
+from mne.preprocessing import ica
 
-###Load and inspect the data###
+### Load and inspect the data ##############################################
+############################################################################
 
 raw = mne.io.read_raw_brainvision('../ExampleData/sem1a.vhdr')
-print(raw)
-print(raw.info)
-raw.plot()
-data,times = raw[:,:]
-print(data.shape)
+raw.load_data()
+#print(raw),print(raw.info),raw.plot()
+#data,times = raw[:,:]
+#print(data.shape)
+chans = raw.ch_names[:]
+chans.remove('IO1')
+raw.pick_channels(chans)
+chans.remove('STI 014')
+mon = mne.channels.read_montage(kind='standard_1005',ch_names=chans)
+#mne.viz.plot_montage(mon)
 
-###Read events###
+### Preprocessing ##########################################################
+############################################################################
 
-events = mne.find_events(raw, stim_channel='STI 014')
+raw.set_eeg_reference('average', projection=True)
+raw.filter(1,40)
 
-#rearrange, as "32" marks stimulus onset and previous trigger marks condition
-for i,a in enumerate(events): 
-    if events[i][2]==32:
-        events[i-1][0]=events[i][0]
+### Read events and cut epochs #############################################
+############################################################################
 
-#cut
-event_id = dict(target=1,standard=2,novelty=3) #Trigger Stimulus Onset
-t_min = -0.2  #Prestimulus timespan
-t_max =  1.0  #Poststimulus timespan
-picks = mne.pick_types(raw.info,eeg=True,stim=False,exclude=['IO1'])
-epochs = mne.Epochs(raw,events,event_id,t_min,t_max,picks=picks)
+epochs = epochdef(raw)
+epochs.set_montage(mon)
+epochs.load_data()
 print(epochs)
 
-###Evoked response###
+### Artefact correction ####################################################
+############################################################################
+
+epochs.plot(n_epochs=1,n_channels=63,block=True) #inspect & reject manually
+#bad trials dropped, bad channels marked for interpolation after ICA
+
+picks_ica=mne.pick_types(epochs.info,eeg=True,exclude='bads') #ica (excluding bad channels)
+icadat = ica.run_ica(epochs,60,max_pca_components=62,random_state=40,picks=picks_ica)
+icadat.plot_components() # make sure blink component is rejected
+icadat.apply(epochs)
+
+epochs.interpolate_bads(reset_bads=True) #interpolate channels
+epochs.plot(n_epochs=1,n_channels=63,block=True)
+reject=dict(eeg=5e-4) #reject based on histogram data
+epochs.drop_bad(reject=reject)
+
+#save clean data (and how to load for later use)
+epochs.save('su01_clean-epo.fif')
+#epochs = mne.read_epochs('su01_clean-epo.fif')
+
+### Evoked response ########################################################
+############################################################################
 
 evokedtarget = epochs['target'].average()
-print(evokedtarget)
-evokedtarget.plot()
+evokednovelty = epochs['novelty'].average()
+evokedstandard = epochs['standard'].average()
 
-evokedtarget = epochs['novelty'].average()
-print(evokedtarget)
-evokedtarget.plot()
+evokeds = {}
+evokeds['1target']=evokedtarget
+evokeds['2novelty']=evokednovelty
+evokeds['3standard']=evokedstandard
+mne.viz.plot_evoked_topo([evokedtarget,evokednovelty,evokedstandard])
+mne.viz.plot_compare_evokeds(evokeds,gfp=False)
 
-evokedtarget = epochs['standard'].average()
-print(evokedtarget)
-evokedtarget.plot()
+evokedtarget.plot_topomap(vmin=-10,vmax=10)
+evokedstandard.plot_topomap(vmin=-10,vmax=10)
+evokednovelty.plot_topomap(vmin=-10,vmax=10)
+
+
