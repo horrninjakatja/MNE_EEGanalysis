@@ -1,8 +1,11 @@
 ##### Basic EEG Analysis with mne-python #####
 
 import mne 
+import numpy as np
 from epochdef import epochdef
+from yclassify import classify
 from mne.preprocessing import ica
+import matplotlib.pyplot as plt
 
 ### Load and inspect the data ##############################################
 ############################################################################
@@ -71,4 +74,17 @@ evokedtarget.plot_topomap(vmin=-10,vmax=10)
 evokedstandard.plot_topomap(vmin=-10,vmax=10)
 evokednovelty.plot_topomap(vmin=-10,vmax=10)
 
+### MVPA over time #########################################################
+############################################################################
 
+scores = classify(epochs)
+
+# Plot
+fig, ax = plt.subplots()
+plt.plot(epochs.times, scores, label='accuracy')
+plt.plot(epochs.times,np.ones(len(epochs.times))*0.5,label='chance')
+ax.set_xlabel('Time in seconds')
+ax.set_ylabel('Classification accuracy') 
+ax.legend()
+ax.set_ylim([0.3,1])
+plt.show()
